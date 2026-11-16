@@ -1,0 +1,143 @@
+# Bomba de agua controlada desde WhatsApp
+
+Enciende y apaga una bomba de agua y consulta su sensor de flujo desde WhatsApp, usando la
+plataforma de bots (proyecto aparte) como interfaz.
+
+```
+ WhatsApp ──► Plataforma de bots (flow) ──http_request──► Este servicio (Railway)
+                                                              ▲   │
+                                          reporte cada 2 s   │   │ orden: encender / apagar
+                                                              │   ▼
+                                    ESP32 + relevador + contactor + sensor de flujo YF-S201
+```
+
+| Carpeta / archivo | Qué es |
+|---|---|
+| `index.js` | Servicio (Node 20, sin dependencias). Guarda el estado y hace de puente |
+| `firmware/bomba_esp32/` | Programa del ESP32 (Arduino IDE) |
+| `whatsapp/flujo.json` | Flow para importar en la plataforma de bots |
+
+---
+
+## 1. Materiales
+
+| Pieza | Para qué | Nota |
+|---|---|---|
+| ESP32 DevKit (ESP32-WROOM-32) | Cerebro con WiFi | |
+| Módulo de relevador de 1 canal, 5 V, con optoacoplador | Activa la bobina del contactor | |
+| **Contactor** con bobina de 127 V AC | Conecta y desconecta la bomba | De corriente igual o mayor a la de la bomba (ver su etiqueta). **No conectes la bomba directo al relevador del módulo**: el arranque del motor quema sus contactos |
+| Sensor de flujo YF-S201 (o el que corresponda al diámetro del tubo) | Mide litros por minuto | El YF-S201 es para tubo de ½" y de 1 a 30 L/min |
+| Fuente de 5 V (cargador USB de 2 A, o módulo HLK-PM01) | Alimenta el ESP32, el relevador y el sensor | |
+| Resistencias de 10 kΩ y 20 kΩ | Divisor de voltaje de la señal del sensor (5 V → 3.3 V) | |
+| Pastilla termomagnética (breaker) para la bomba | Protección | |
+| Caja de plástico (gabinete) | Que nada quede expuesto | |
+
+## 2. Conexiones
+
+> ⚠️ **127 V puede matar.** La parte de corriente alterna (contactor, bomba, pastilla)
+> debe instalarla un electricista. Trabaja siempre con la pastilla **abajo** y nunca toques el
+> circuito mientras esté conectado.
+
+**Baja tensión (5 V / 3.3 V):**
+
+| Desde | Hacia |
+|---|---|
+| Fuente 5 V (+) | ESP32 `VIN`, relevador `VCC`, sensor cable rojo |
+| Fuente 5 V (−) | ESP32 `GND`, relevador `GND`, sensor cable negro |
+| ESP32 `GPIO26` | relevador `IN` |
+| Sensor cable amarillo (señal) | resistencia 10 kΩ → `GPIO27`; de `GPIO27`, resistencia 20 kΩ → `GND` |
+
+**Alta tensión (127 V, electricista):**
+
+```
+Fase ── pastilla ──┬── contactor L1 ── contactor T1 ── bomba ── Neutro
+                   │
+                   └── relevador COM ── relevador NO ── bobina del contactor (A1)
+                                                         bobina del contactor (A2) ── Neutro
+```
+
+El relevador del módulo solo mueve la bobina del contactor (poca corriente); el contactor es
+el que lleva la corriente de la bomba.
+
+## 3. Servicio en Railway
+
+1. Sube esta carpeta a un repositorio propio de GitHub (por ejemplo `JesGarPer/bomba-agua`).
+2. En Railway: **+ Add → GitHub Repo → bomba-agua**. Railway detecta Node y usa `npm start`.
+3. **Settings → Networking → Generate Domain**. Anota la URL.
+4. **Variables**:
+
+| Variable | Valor |
+|---|---|
+| `DEVICE_KEY` | Texto largo al azar. Lo usa el ESP32 |
+| `API_KEY` | Otro texto largo al azar. Lo usa el bot |
+| `AUTORIZADOS` | Números que pueden encender/apagar, separados por coma, por ejemplo `5215511112222,5215533334444`. Vacío = cualquiera (solo para pruebas) |
+| `MINUTOS_DEFAULT` | Minutos que queda encendida si no se dice cuánto (por defecto `15`) |
+| `MINUTOS_MAX` | Máximo que se puede pedir por WhatsApp (por defecto `60`) |
+
+Para generar los textos al azar:
+`node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"`
+
+Prueba: `https://<tu-dominio>/salud` debe responder `{"ok":true}`.
+
+> El estado vive en memoria: si el servicio se reinicia, la bomba queda **apagada** hasta nueva
+> orden (lo seguro). El total de litros no se pierde porque lo guarda el ESP32.
+
+## 4. Programa del ESP32
+
+1. Instala **Arduino IDE**. En *Preferencias → URLs adicionales* agrega
+   `https://espressif.github.io/arduino-esp32/package_esp32_index.json` y en el *Gestor de
+   placas* instala **esp32** (Espressif).
+2. En el *Gestor de librerías* instala **ArduinoJson** (versión 7).
+3. Abre `firmware/bomba_esp32/bomba_esp32.ino` y llena la sección *Configuración*:
+   `WIFI_SSID`, `WIFI_PASSWORD`, `SERVICIO_URL` (`https://<tu-dominio>/dispositivo/reporte`)
+   y `DEVICE_KEY`.
+4. Placa **ESP32 Dev Module**, elige el puerto y dale **Subir**.
+5. Abre el *Monitor serie* a 115200 para ver lo que hace.
+
+Protecciones que aplica el propio ESP32 (funcionan aunque no haya internet):
+
+| Protección | Valor por defecto | Constante |
+|---|---|---|
+| Tiempo máximo encendida | 60 min | `MAX_ENCENDIDA_MS` |
+| En seco: sin flujo después del arranque | 15 s de gracia + 10 s sin flujo | `GRACIA_ARRANQUE_MS`, `SECO_MS` |
+| Sin conexión con el servicio | 30 s | `SIN_CONEXION_MS` |
+
+Después de un apagado automático, la bomba **no se vuelve a encender sola**: hay que pedirlo
+otra vez por WhatsApp, y el estado muestra el motivo.
+
+**Calibrar el sensor:** llena un recipiente de volumen conocido (por ejemplo 10 L), compara con
+el total medido y ajusta `PULSOS_POR_LITRO` (nuevo = actual × medido ÷ real).
+
+## 5. Flow de WhatsApp
+
+1. Abre `whatsapp/flujo.json` y en el nodo `inicio` cambia `base_url` (la URL del servicio) y
+   `api_key` (la misma `API_KEY` de Railway).
+2. En la plataforma: **Flows → + Nuevo → JSON → pega el contenido → Importar → Guardar**, ponle
+   trigger `default` y **Publicar**.
+
+Lo que entiende el bot:
+
+| Escribe | Hace |
+|---|---|
+| `1`, `encender`, `prende` | Enciende por `MINUTOS_DEFAULT` |
+| `encender 10 min` | Enciende 10 minutos |
+| `2`, `apagar`, `apágala` | Apaga |
+| `3`, `estado`, `flujo` | Estado, flujo (L/min), total de litros y conexión del equipo |
+| `menú` | Opciones |
+
+## 6. Seguridad
+
+- El ESP32 y el bot usan claves distintas (`DEVICE_KEY`, `API_KEY`); con una sola no se puede
+  hacer lo del otro.
+- Solo los números de `AUTORIZADOS` pueden encender o apagar. Llénalo antes de dejarlo en uso.
+- El ESP32 no valida el certificado HTTPS del servidor (`setInsecure()`), por simplicidad. Para
+  endurecerlo, cargar el certificado raíz con `cliente.setCACert(...)`.
+
+## API del servicio
+
+| Método y ruta | Clave | Uso |
+|---|---|---|
+| `GET /salud` | — | Verificación |
+| `POST /dispositivo/reporte` | `x-device-key` | ESP32: `{encendida, caudal_lmin, total_litros, apagado_por?}` → `{encender}` |
+| `GET /estado` | `x-api-key` | Bot: `{ok, mensaje, conectado, encendida, caudal_lmin, total_litros}` |
+| `POST /bomba` | `x-api-key` | Bot: `{accion: "encender"\|"apagar", telefono, minutos?}` → `{ok, mensaje}`. Espera hasta 6 s a que el ESP32 confirme |

@@ -1,0 +1,12 @@
+{
+  "name": "bomba-agua",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Servicio que conecta el ESP32 de la bomba de agua con el bot de WhatsApp",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node index.js"
+  }
+}

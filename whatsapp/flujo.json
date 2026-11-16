@@ -1,0 +1,107 @@
+{
+  "startNodeId": "inicio",
+  "nodes": {
+    "inicio": {
+      "type": "code",
+      "code": "// Datos del servicio de la bomba: cambia estas dos lineas despues de desplegarlo.\nvar base_url = \"https://TU-SERVICIO.up.railway.app\";\nvar api_key = \"TU_API_KEY\";\n\n// {{nombre_coma}} = \", Nombre\" o vacio, para no dejar \"¡Hola, !\" si WhatsApp no manda nombre.\nvar n = String(input.nombre || \"\").trim().split(/\\s+/)[0];\nreturn { base_url: base_url, api_key: api_key, nombre_coma: n ? \", \" + n : \"\" };",
+      "next": "bienvenida"
+    },
+    "bienvenida": {
+      "type": "message",
+      "text": "💧 ¡Hola{{nombre_coma}}! Desde aquí controlas la *bomba de agua*.",
+      "next": "menu"
+    },
+    "menu": {
+      "type": "question",
+      "text": "Escribe el número de una opción:\n\n1️⃣ Encender bomba\n2️⃣ Apagar bomba\n3️⃣ Ver estado y flujo\n\nTambién puedes escribir, por ejemplo, *encender 10 min*.",
+      "saveAs": "entrada",
+      "next": "normalizar"
+    },
+    "normalizar": {
+      "type": "code",
+      "code": "var t = String(input.entrada || \"\").trim().toLowerCase();\nt = t.normalize(\"NFD\").replace(/[\\u0300-\\u036f]/g, \"\").replace(/\\s+/g, \" \");\nvar op = \"libre\";\nif (/^(1|encender|enciende|prender|prende|prendela|enciendela)\\b/.test(t)) op = \"1\";\nelse if (/^(2|apagar|apaga|apagala)\\b/.test(t)) op = \"2\";\nelse if (/^(3|estado|flujo|status|como esta)\\b/.test(t)) op = \"3\";\nelse if (t === \"\" || /^(menu|hola|inicio|opciones|0)$/.test(t)) op = \"menu\";\nvar m = t.match(/(\\d+)\\s*(min|minuto|minutos)\\b/);\n// Mensaje por si el servicio no responde: el http_request solo sobrescribe r si la llamada sale bien.\nreturn { opcion: op, minutos: m ? m[1] : \"\", r: { mensaje: \"⚠️ No pude comunicarme con el equipo de la bomba. Intenta de nuevo en un momento.\" } };",
+      "next": "router"
+    },
+    "router": {
+      "type": "condition",
+      "variable": "opcion",
+      "cases": [
+        {
+          "value": "1",
+          "next": "encender"
+        },
+        {
+          "value": "2",
+          "next": "apagar"
+        },
+        {
+          "value": "3",
+          "next": "estado"
+        },
+        {
+          "value": "menu",
+          "next": "menu"
+        }
+      ],
+      "default": "no_entendi"
+    },
+    "encender": {
+      "type": "http_request",
+      "method": "POST",
+      "url": "{{base_url}}/bomba",
+      "headers": [
+        {
+          "key": "x-api-key",
+          "value": "{{api_key}}"
+        }
+      ],
+      "bodyTemplate": "{\"accion\":\"encender\",\"telefono\":\"{{telefono}}\",\"minutos\":\"{{minutos}}\"}",
+      "saveAs": "r",
+      "next": "respuesta"
+    },
+    "apagar": {
+      "type": "http_request",
+      "method": "POST",
+      "url": "{{base_url}}/bomba",
+      "headers": [
+        {
+          "key": "x-api-key",
+          "value": "{{api_key}}"
+        }
+      ],
+      "bodyTemplate": "{\"accion\":\"apagar\",\"telefono\":\"{{telefono}}\"}",
+      "saveAs": "r",
+      "next": "respuesta"
+    },
+    "estado": {
+      "type": "http_request",
+      "method": "GET",
+      "url": "{{base_url}}/estado",
+      "headers": [
+        {
+          "key": "x-api-key",
+          "value": "{{api_key}}"
+        }
+      ],
+      "bodyTemplate": "",
+      "saveAs": "r",
+      "next": "respuesta"
+    },
+    "respuesta": {
+      "type": "message",
+      "text": "{{r.mensaje}}",
+      "next": "mas"
+    },
+    "no_entendi": {
+      "type": "message",
+      "text": "No entendí tu mensaje 🤔",
+      "next": "menu"
+    },
+    "mas": {
+      "type": "question",
+      "text": "¿Algo más? Escribe *1*, *2* o *3*, o *menú* para ver las opciones.",
+      "saveAs": "entrada",
+      "next": "normalizar"
+    }
+  }
+}
