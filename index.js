@@ -1,9 +1,9 @@
-// Servicio de la bomba de agua: puente entre el ESP32 (reporta lecturas y recibe la orden
+// Servicio de la bomba de agua: puente entre la placa (reporta lecturas y recibe la orden
 // de encender/apagar) y el bot de WhatsApp (consulta y manda ordenes con el nodo
 // http_request de la plataforma). Sin dependencias: solo Node 20.
 //
 // Las protecciones fuertes (tiempo maximo, funcionamiento en seco, perdida de conexion)
-// viven en el firmware del ESP32, para que funcionen aunque se caiga este servicio.
+// viven en el firmware dla placa, para que funcionen aunque se caiga este servicio.
 // Aqui solo se lleva el apagado programado ("enciende 10 min") y quien puede ordenar.
 
 const http = require("node:http");
@@ -17,9 +17,9 @@ const AUTORIZADOS = (process.env.AUTORIZADOS || "").split(",").map(ultimosDiez).
 const MINUTOS_DEFAULT = Number(process.env.MINUTOS_DEFAULT || 15);
 const MINUTOS_MAX = Number(process.env.MINUTOS_MAX || 60);
 const ZONA = process.env.ZONA_HORARIA || "America/Mexico_City";
-// Si el ESP32 no reporta en este tiempo se considera desconectado (reporta cada ~2 s).
+// Si la placa no reporta en este tiempo se considera desconectado (reporta cada ~2 s).
 const DESCONECTADO_MS = 15000;
-// Cuanto espera POST /bomba a que el ESP32 confirme la orden (el http_request del bot corta a los 8 s).
+// Cuanto espera POST /bomba a que la placa confirme la orden (el http_request del bot corta a los 8 s).
 const ESPERA_CONFIRMACION_MS = 6000;
 
 if (!DEVICE_KEY || !API_KEY) {
@@ -30,7 +30,7 @@ if (!DEVICE_KEY || !API_KEY) {
 const estado = {
   deseada: false, // lo que pidio WhatsApp
   apagarEn: null, // epoch ms del apagado programado
-  reporte: null, // ultimo reporte del ESP32: { encendida, caudal_lmin, total_litros }
+  reporte: null, // ultimo reporte dla placa: { encendida, caudal_lmin, total_litros }
   vistoEn: null, // epoch ms del ultimo reporte
   ultimoAviso: null, // { texto, en } del ultimo apagado automatico
 };
@@ -117,7 +117,7 @@ function reporteDelDispositivo(body) {
   };
   estado.vistoEn = Date.now();
 
-  // El ESP32 se apago solo por una proteccion: no volver a encenderlo hasta nueva orden.
+  // La placa se apago sola por una proteccion: no volver a encenderlo hasta nueva orden.
   if (body.apagado_por) {
     estado.deseada = false;
     estado.apagarEn = null;

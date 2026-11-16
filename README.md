@@ -8,13 +8,13 @@ plataforma de bots (proyecto aparte) como interfaz.
                                                               ▲   │
                                           reporte cada 2 s   │   │ orden: encender / apagar
                                                               │   ▼
-                                    ESP32 + relevador + contactor + sensor de flujo YF-S201
+                           NodeMCU (ESP8266) + relevador + contactor + sensor de flujo YF-S201
 ```
 
 | Carpeta / archivo | Qué es |
 |---|---|
 | `index.js` | Servicio (Node 20, sin dependencias). Guarda el estado y hace de puente |
-| `firmware/bomba_esp32/` | Programa del ESP32 (Arduino IDE) |
+| `firmware/bomba_esp8266/` | Programa de la NodeMCU (Arduino IDE) |
 | `whatsapp/flujo.json` | Flow para importar en la plataforma de bots |
 
 ---
@@ -23,11 +23,11 @@ plataforma de bots (proyecto aparte) como interfaz.
 
 | Pieza | Para qué | Nota |
 |---|---|---|
-| ESP32 DevKit (ESP32-WROOM-32) | Cerebro con WiFi | |
-| Módulo de relevador de 1 canal, 5 V, con optoacoplador | Activa la bobina del contactor | |
+| NodeMCU v2/v3 (ESP8266, ESP-12E) | Cerebro con WiFi | |
+| Módulo de relevador de 1 canal, 5 V, con optoacoplador | Activa la bobina del contactor | La NodeMCU da señales de 3.3 V: que el módulo diga que funciona con 3.3 V (los de optoacoplador y activación en bajo casi siempre sirven) |
 | **Contactor** con bobina de 127 V AC | Conecta y desconecta la bomba | De corriente igual o mayor a la de la bomba (ver su etiqueta). **No conectes la bomba directo al relevador del módulo**: el arranque del motor quema sus contactos |
 | Sensor de flujo YF-S201 (o el que corresponda al diámetro del tubo) | Mide litros por minuto | El YF-S201 es para tubo de ½" y de 1 a 30 L/min |
-| Fuente de 5 V (cargador USB de 2 A, o módulo HLK-PM01) | Alimenta el ESP32, el relevador y el sensor | |
+| Fuente de 5 V (cargador USB de 2 A, o módulo HLK-PM01) | Alimenta la placa, el relevador y el sensor | |
 | Resistencias de 10 kΩ y 20 kΩ | Divisor de voltaje de la señal del sensor (5 V → 3.3 V) | |
 | Pastilla termomagnética (breaker) para la bomba | Protección | |
 | Caja de plástico (gabinete) | Que nada quede expuesto | |
@@ -42,10 +42,13 @@ plataforma de bots (proyecto aparte) como interfaz.
 
 | Desde | Hacia |
 |---|---|
-| Fuente 5 V (+) | ESP32 `VIN`, relevador `VCC`, sensor cable rojo |
-| Fuente 5 V (−) | ESP32 `GND`, relevador `GND`, sensor cable negro |
-| ESP32 `GPIO26` | relevador `IN` |
-| Sensor cable amarillo (señal) | resistencia 10 kΩ → `GPIO27`; de `GPIO27`, resistencia 20 kΩ → `GND` |
+| Fuente 5 V (+) | NodeMCU `VIN`, relevador `VCC`, sensor cable rojo |
+| Fuente 5 V (−) | NodeMCU `G` (GND), relevador `GND`, sensor cable negro |
+| NodeMCU `D1` | relevador `IN` |
+| Sensor cable amarillo (señal) | resistencia 10 kΩ → `D2`; de `D2`, resistencia 20 kΩ → `G` (GND) |
+
+No uses `D3`, `D4` ni `D8` para el relevador: cambian de estado al arrancar la placa y podrían
+encender la bomba un instante. Mientras programas por USB puedes dejar la fuente desconectada.
 
 **Alta tensión (127 V, electricista):**
 
@@ -68,7 +71,7 @@ el que lleva la corriente de la bomba.
 
 | Variable | Valor |
 |---|---|
-| `DEVICE_KEY` | Texto largo al azar. Lo usa el ESP32 |
+| `DEVICE_KEY` | Texto largo al azar. Lo usa la placa |
 | `API_KEY` | Otro texto largo al azar. Lo usa el bot |
 | `AUTORIZADOS` | Números que pueden encender/apagar, separados por coma, por ejemplo `5215511112222,5215533334444`. Vacío = cualquiera (solo para pruebas) |
 | `MINUTOS_DEFAULT` | Minutos que queda encendida si no se dice cuánto (por defecto `15`) |
@@ -80,21 +83,24 @@ Para generar los textos al azar:
 Prueba: `https://<tu-dominio>/salud` debe responder `{"ok":true}`.
 
 > El estado vive en memoria: si el servicio se reinicia, la bomba queda **apagada** hasta nueva
-> orden (lo seguro). El total de litros no se pierde porque lo guarda el ESP32.
+> orden (lo seguro). El total de litros no se pierde porque lo guarda la placa.
 
-## 4. Programa del ESP32
+## 4. Programa de la NodeMCU
 
-1. Instala **Arduino IDE**. En *Preferencias → URLs adicionales* agrega
-   `https://espressif.github.io/arduino-esp32/package_esp32_index.json` y en el *Gestor de
-   placas* instala **esp32** (Espressif).
+1. Instala **Arduino IDE**. En *Archivo → Preferencias → URLs adicionales de gestor de placas*
+   agrega `https://arduino.esp8266.com/stable/package_esp8266com_index.json` y en el
+   *Gestor de placas* instala **esp8266** (ESP8266 Community).
 2. En el *Gestor de librerías* instala **ArduinoJson** (versión 7).
-3. Abre `firmware/bomba_esp32/bomba_esp32.ino` y llena la sección *Configuración*:
+3. Abre `firmware/bomba_esp8266/bomba_esp8266.ino` y llena la sección *Configuración*:
    `WIFI_SSID`, `WIFI_PASSWORD`, `SERVICIO_URL` (`https://<tu-dominio>/dispositivo/reporte`)
    y `DEVICE_KEY`.
-4. Placa **ESP32 Dev Module**, elige el puerto y dale **Subir**.
+4. Placa **NodeMCU 1.0 (ESP-12E Module)**, elige el puerto (COM) y dale **Subir**. Si Windows no
+   reconoce la placa, instala el driver **CH340** o **CP2102** (viene impreso en el chip junto al USB).
 5. Abre el *Monitor serie* a 115200 para ver lo que hace.
 
-Protecciones que aplica el propio ESP32 (funcionan aunque no haya internet):
+La NodeMCU solo se conecta a redes WiFi de **2.4 GHz** (no 5 GHz).
+
+Protecciones que aplica la propia placa (funcionan aunque no haya internet):
 
 | Protección | Valor por defecto | Constante |
 |---|---|---|
@@ -127,17 +133,17 @@ Lo que entiende el bot:
 
 ## 6. Seguridad
 
-- El ESP32 y el bot usan claves distintas (`DEVICE_KEY`, `API_KEY`); con una sola no se puede
+- La placa y el bot usan claves distintas (`DEVICE_KEY`, `API_KEY`); con una sola no se puede
   hacer lo del otro.
 - Solo los números de `AUTORIZADOS` pueden encender o apagar. Llénalo antes de dejarlo en uso.
-- El ESP32 no valida el certificado HTTPS del servidor (`setInsecure()`), por simplicidad. Para
-  endurecerlo, cargar el certificado raíz con `cliente.setCACert(...)`.
+- La placa no valida el certificado HTTPS del servidor (`setInsecure()`), por simplicidad. Para
+  endurecerlo, cargar el certificado raíz con `cliente.setTrustAnchors(...)`.
 
 ## API del servicio
 
 | Método y ruta | Clave | Uso |
 |---|---|---|
 | `GET /salud` | — | Verificación |
-| `POST /dispositivo/reporte` | `x-device-key` | ESP32: `{encendida, caudal_lmin, total_litros, apagado_por?}` → `{encender}` |
+| `POST /dispositivo/reporte` | `x-device-key` | Placa: `{encendida, caudal_lmin, total_litros, apagado_por?}` → `{encender}` |
 | `GET /estado` | `x-api-key` | Bot: `{ok, mensaje, conectado, encendida, caudal_lmin, total_litros}` |
-| `POST /bomba` | `x-api-key` | Bot: `{accion: "encender"\|"apagar", telefono, minutos?}` → `{ok, mensaje}`. Espera hasta 6 s a que el ESP32 confirme |
+| `POST /bomba` | `x-api-key` | Bot: `{accion: "encender"\|"apagar", telefono, minutos?}` → `{ok, mensaje}`. Espera hasta 6 s a que la placa confirme |

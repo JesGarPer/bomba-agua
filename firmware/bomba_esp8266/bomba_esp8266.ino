@@ -1,18 +1,18 @@
 // Bomba de agua controlada desde WhatsApp.
-// ESP32 + modulo de relevador (que activa un contactor) + sensor de flujo tipo YF-S201.
+// NodeMCU (ESP8266) + modulo de relevador (que activa un contactor) + sensor de flujo tipo YF-S201.
 //
 // Cada INTERVALO_REPORTE_MS le manda al servicio si la bomba esta encendida, el flujo y el
 // total de litros; en la respuesta recibe si la bomba debe estar encendida.
 // Las protecciones (tiempo maximo, funcionamiento en seco y perdida de conexion) se aplican
 // AQUI, en el equipo, para que funcionen aunque se caiga el internet o el servicio.
 //
-// Arduino IDE: placa "ESP32 Dev Module" (paquete esp32 de Espressif) y la libreria
+// Arduino IDE: placa "NodeMCU 1.0 (ESP-12E Module)" (paquete esp8266) y la libreria
 // ArduinoJson version 7 (Herramientas > Gestor de librerias).
 
-#include <WiFi.h>
-#include <WiFiClientSecure.h>
-#include <HTTPClient.h>
-#include <Preferences.h>
+#include <ESP8266WiFi.h>
+#include <ESP8266HTTPClient.h>
+#include <WiFiClientSecureBearSSL.h>
+#include <LittleFS.h>
 #include <ArduinoJson.h>
 
 // ---------- Configuracion: cambia esto ----------
@@ -21,9 +21,9 @@ const char* WIFI_PASSWORD = "TU_CONTRASENA_WIFI";
 const char* SERVICIO_URL  = "https://TU-SERVICIO.up.railway.app/dispositivo/reporte";
 const char* DEVICE_KEY    = "LA_MISMA_DEVICE_KEY_DEL_SERVICIO";
 
-const int  PIN_RELE  = 26;
-const int  PIN_FLUJO = 27;
-const int  PIN_LED   = 2;   // LED azul de la placa: encendido = bomba encendida
+const int  PIN_RELE  = D1;           // GPIO5: no cambia de estado al arrancar la placa
+const int  PIN_FLUJO = D2;           // GPIO4: admite interrupciones
+const int  PIN_LED   = LED_BUILTIN;  // LED azul de la placa (se enciende con LOW): encendido = bomba encendida
 const bool RELE_ACTIVO_EN_BAJO = true;  // la mayoria de los modulos de relevador se activan con LOW
 
 // YF-S201: ~450 pulsos por litro (frecuencia = 7.5 x L/min). Calibrar llenando un balde de volumen conocido.
@@ -38,7 +38,6 @@ const unsigned long SIN_CONEXION_MS      = 30000;  // sin respuesta del servicio
 
 // ---------- Estado ----------
 volatile uint32_t pulsos = 0;
-portMUX_TYPE muxPulsos = portMUX_INITIALIZER_UNLOCKED;
 
 bool encendida = false;
 unsigned long encendidaDesde = 0;
@@ -50,20 +49,19 @@ unsigned long ultimoGuardado = 0;
 float caudalLmin = 0;
 double totalLitros = 0;
 double totalGuardado = 0;
-// Motivo del ultimo apagado automatico. Se manda al servicio hasta que responde, y mientras
-// tanto se ignora cualquier orden de encender (para no reencender una bomba en seco).
+// Motivo del ultimo apagado automatico. Se manda al servicio hasta que responde; el servicio
+// lo registra y deja la bomba apagada (para no reencender una bomba en seco).
 String apagadoPor = "";
-Preferences prefs;
+// Un solo cliente HTTPS para todo el programa: crearlo en cada reporte fragmenta la poca RAM del ESP8266.
+BearSSL::WiFiClientSecure cliente;
 
 void IRAM_ATTR alPulso() {
-  portENTER_CRITICAL_ISR(&muxPulsos);
   pulsos++;
-  portEXIT_CRITICAL_ISR(&muxPulsos);
 }
 
 void ponerRele(bool on) {
   digitalWrite(PIN_RELE, (on != RELE_ACTIVO_EN_BAJO) ? HIGH : LOW);
-  digitalWrite(PIN_LED, on ? HIGH : LOW);
+  digitalWrite(PIN_LED, on ? LOW : HIGH);
   if (on && !encendida) {
     encendidaDesde = millis();
     ultimoFlujoOk = millis();
@@ -78,15 +76,30 @@ void apagarPor(const char* motivo) {
   Serial.printf("Apagado automatico: %s\n", motivo);
 }
 
+void guardarTotal() {
+  File f = LittleFS.open("/total", "w");
+  if (!f) return;
+  f.print(totalLitros, 3);
+  f.close();
+}
+
+double leerTotal() {
+  File f = LittleFS.open("/total", "r");
+  if (!f) return 0;
+  double t = f.readString().toDouble();
+  f.close();
+  return t;
+}
+
 void medir() {
   unsigned long ahora = millis();
   unsigned long dt = ahora - ultimaMedicion;
   if (dt < 1000) return;
 
-  portENTER_CRITICAL(&muxPulsos);
+  noInterrupts();
   uint32_t p = pulsos;
   pulsos = 0;
-  portEXIT_CRITICAL(&muxPulsos);
+  interrupts();
   ultimaMedicion = ahora;
 
   float litros = p / PULSOS_POR_LITRO;
@@ -96,7 +109,7 @@ void medir() {
 
   // Guardar el total en la memoria de la placa cada minuto (no cada segundo: desgasta la flash).
   if (ahora - ultimoGuardado >= 60000 && totalLitros - totalGuardado >= 0.1) {
-    prefs.putDouble("total", totalLitros);
+    guardarTotal();
     totalGuardado = totalLitros;
     ultimoGuardado = ahora;
   }
@@ -117,8 +130,6 @@ void protecciones() {
 void reportar() {
   if (WiFi.status() != WL_CONNECTED) return;
 
-  WiFiClientSecure cliente;
-  cliente.setInsecure();  // no valida el certificado del servidor (ver README, "Seguridad")
   HTTPClient http;
   http.setTimeout(5000);
   if (!http.begin(cliente, SERVICIO_URL)) return;
@@ -146,7 +157,7 @@ void reportar() {
       }
     }
   } else {
-    Serial.printf("El reporte fallo: HTTP %d\n", codigo);
+    Serial.printf("El reporte fallo: HTTP %d (%s)\n", codigo, http.errorToString(codigo).c_str());
   }
   http.end();
 }
@@ -164,14 +175,16 @@ void setup() {
   pinMode(PIN_FLUJO, INPUT);
   attachInterrupt(digitalPinToInterrupt(PIN_FLUJO), alPulso, FALLING);
 
-  prefs.begin("bomba", false);
-  totalLitros = prefs.getDouble("total", 0);
+  LittleFS.begin();
+  totalLitros = leerTotal();
   totalGuardado = totalLitros;
+
+  cliente.setInsecure();  // no valida el certificado del servidor (ver README, "Seguridad")
 
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  Serial.println("Conectando al WiFi...");
+  Serial.println("\nConectando al WiFi...");
 
   ultimaMedicion = millis();
   ultimaRespuestaOk = millis();
