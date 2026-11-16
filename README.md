@@ -91,14 +91,24 @@ Prueba: `https://<tu-dominio>/salud` debe responder `{"ok":true}`.
    agrega `https://arduino.esp8266.com/stable/package_esp8266com_index.json` y en el
    *Gestor de placas* instala **esp8266** (ESP8266 Community).
 2. En el *Gestor de librerías* instala **ArduinoJson** (versión 7).
-3. Abre `firmware/bomba_esp8266/bomba_esp8266.ino` y llena la sección *Configuración*:
+3. En `firmware/bomba_esp8266/`, copia `secretos.ejemplo.h` como `secretos.h` y llena
    `WIFI_SSID`, `WIFI_PASSWORD`, `SERVICIO_URL` (`https://<tu-dominio>/dispositivo/reporte`)
-   y `DEVICE_KEY`.
-4. Placa **NodeMCU 1.0 (ESP-12E Module)**, elige el puerto (COM) y dale **Subir**. Si Windows no
-   reconoce la placa, instala el driver **CH340** o **CP2102** (viene impreso en el chip junto al USB).
-5. Abre el *Monitor serie* a 115200 para ver lo que hace.
+   y `DEVICE_KEY`. `secretos.h` no se sube a GitHub.
+4. Abre `bomba_esp8266.ino`. Placa **NodeMCU 1.0 (ESP-12E Module)**, elige el puerto (COM) y
+   dale **Subir**. Si Windows no reconoce la placa, instala el driver **CH340** o **CP2102**
+   (viene impreso en el chip junto al USB).
+5. Abre el *Monitor serie* a 115200: muestra la IP de la placa y cada orden que recibe.
 
 La NodeMCU solo se conecta a redes WiFi de **2.4 GHz** (no 5 GHz).
+
+**Página de pruebas:** desde un celular o computadora en la misma red WiFi, abre
+`http://<IP de la placa>/`. Tiene botones **ENCENDER / APAGAR**, el estado y el flujo. Lo que
+hagas ahí se le avisa al servicio, así que WhatsApp ve el mismo estado.
+
+**Modo prueba (`MODO_PRUEBA = true`):** para probar con un LED en `D1` (con su resistencia de
+220 Ω a GND) en lugar de la bomba. Desactiva la protección en seco (un LED no genera flujo) y la
+de pérdida de conexión. **Antes de conectar la bomba:** `MODO_PRUEBA = false` y
+`RELE_ACTIVO_EN_BAJO = true` (si tu módulo de relevador se activa con LOW).
 
 Protecciones que aplica la propia placa (funcionan aunque no haya internet):
 

@@ -124,6 +124,12 @@ function reporteDelDispositivo(body) {
     estado.ultimoAviso = { texto: `Se apagó sola: ${MOTIVOS[body.apagado_por] || body.apagado_por}`, en: Date.now() };
     console.log(`Apagado automatico reportado por el equipo: ${body.apagado_por}`);
   }
+  // Alguien uso los botones de la pagina de la placa: esa orden manda sobre la anterior.
+  if (body.orden_local === "encender" || body.orden_local === "apagar") {
+    estado.deseada = body.orden_local === "encender";
+    estado.apagarEn = estado.deseada ? Date.now() + MINUTOS_DEFAULT * 60000 : null;
+    console.log(`Orden ${body.orden_local} desde el boton de la placa`);
+  }
   aplicarApagadoProgramado();
   return { encender: estado.deseada };
 }
