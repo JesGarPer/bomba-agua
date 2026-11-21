@@ -73,7 +73,7 @@ el que lleva la corriente de la bomba.
 |---|---|
 | `DEVICE_KEY` | Texto largo al azar. Lo usa la placa |
 | `API_KEY` | Otro texto largo al azar. Lo usa el bot |
-| `AUTORIZADOS` | Números que pueden encender/apagar, separados por coma, por ejemplo `5215511112222,5215533334444`. Vacío = cualquiera (solo para pruebas) |
+| `AUTORIZADOS` | **Déjala vacía.** Quién tiene acceso se administra desde la plataforma (ver sección 5). Solo si se llena, el servicio filtra además por estos números (separados por coma) |
 | `MINUTOS_DEFAULT` | Minutos que queda encendida si no se dice cuánto (por defecto `15`) |
 | `MINUTOS_MAX` | Máximo que se puede pedir por WhatsApp (por defecto `60`) |
 
@@ -126,10 +126,18 @@ el total medido y ajusta `PULSOS_POR_LITRO` (nuevo = actual × medido ÷ real).
 
 ## 5. Flow de WhatsApp
 
-1. Abre `whatsapp/flujo.json` y en el nodo `inicio` cambia `base_url` (la URL del servicio) y
+1. En la plataforma, **Datos → nueva colección "Autorizados"** con un campo `telefono`. Agrega un
+   registro por cada número con acceso (10 dígitos, o con 52 / 521; da igual el formato). Para
+   quitarle el acceso a alguien, borra su registro.
+2. Abre `whatsapp/flujo.json` y en el nodo `inicio` cambia `base_url` (la URL del servicio) y
    `api_key` (la misma `API_KEY` de Railway).
-2. En la plataforma: **Flows → + Nuevo → JSON → pega el contenido → Importar → Guardar**, ponle
-   trigger `default` y **Publicar**.
+3. **Flows → + Nuevo → JSON → pega el contenido → Importar**. En el nodo de Datos
+   (`buscar_autorizados`) elige la colección **Autorizados**. **Guardar**, trigger `default` y
+   **Publicar**.
+
+El flujo revisa la tabla cada vez que alguien empieza la conversación. Si su número no está,
+contesta "🚫 Tu número no tiene acceso al control de la bomba" y no muestra el menú. Si no se
+eligió la colección o está vacía, nadie entra.
 
 Lo que entiende el bot:
 
@@ -145,7 +153,8 @@ Lo que entiende el bot:
 
 - La placa y el bot usan claves distintas (`DEVICE_KEY`, `API_KEY`); con una sola no se puede
   hacer lo del otro.
-- Solo los números de `AUTORIZADOS` pueden encender o apagar. Llénalo antes de dejarlo en uso.
+- Solo los números de la colección **Autorizados** (Datos de la plataforma) pueden usar el menú.
+  El servicio solo acepta órdenes con la `API_KEY`, es decir, solo del flujo.
 - La placa no valida el certificado HTTPS del servidor (`setInsecure()`), por simplicidad. Para
   endurecerlo, cargar el certificado raíz con `cliente.setTrustAnchors(...)`.
 

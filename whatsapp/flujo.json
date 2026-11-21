@@ -4,7 +4,36 @@
     "inicio": {
       "type": "code",
       "code": "// Datos del servicio de la bomba: cambia estas dos lineas despues de desplegarlo.\nvar base_url = \"https://TU-SERVICIO.up.railway.app\";\nvar api_key = \"TU_API_KEY\";\n\n// {{nombre_coma}} = \", Nombre\" o vacio, para no dejar \"¡Hola, !\" si WhatsApp no manda nombre.\nvar n = String(input.nombre || \"\").trim().split(/\\s+/)[0];\nreturn { base_url: base_url, api_key: api_key, nombre_coma: n ? \", \" + n : \"\" };",
-      "next": "bienvenida"
+      "next": "buscar_autorizados"
+    },
+    "buscar_autorizados": {
+      "type": "datum_query",
+      "collectionId": "",
+      "filters": [],
+      "mode": "all",
+      "saveAs": "lista_autorizados",
+      "next": "verificar"
+    },
+    "verificar": {
+      "type": "code",
+      "code": "// Compara los ultimos 10 digitos: WhatsApp manda los numeros de Mexico como 521XXXXXXXXXX\n// y en la tabla se pueden escribir con o sin 52/521, espacios o guiones.\nfunction diez(t) { return String(t || \"\").replace(/\\D/g, \"\").slice(-10); }\nvar mio = diez(input.telefono);\nvar lista = Array.isArray(input.lista_autorizados) ? input.lista_autorizados : [];\nvar ok = mio.length === 10 && lista.some(function (r) { return diez(r.telefono) === mio; });\nreturn { autorizado: ok ? \"si\" : \"no\" };",
+      "next": "router_acceso"
+    },
+    "router_acceso": {
+      "type": "condition",
+      "variable": "autorizado",
+      "cases": [
+        {
+          "value": "si",
+          "next": "bienvenida"
+        }
+      ],
+      "default": "sin_acceso"
+    },
+    "sin_acceso": {
+      "type": "message",
+      "text": "🚫 Tu número no tiene acceso al control de la bomba. Pide al administrador que te agregue.",
+      "next": null
     },
     "bienvenida": {
       "type": "message",
