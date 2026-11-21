@@ -25,10 +25,32 @@
       "cases": [
         {
           "value": "si",
-          "next": "bienvenida"
+          "next": "leer_equipo"
         }
       ],
       "default": "sin_acceso"
+    },
+    "leer_equipo": {
+      "type": "datum_query",
+      "collectionId": "",
+      "filters": [],
+      "mode": "one",
+      "saveAs": "equipo",
+      "next": "sincronizar"
+    },
+    "sincronizar": {
+      "type": "http_request",
+      "method": "POST",
+      "url": "{{base_url}}/config",
+      "headers": [
+        {
+          "key": "x-api-key",
+          "value": "{{api_key}}"
+        }
+      ],
+      "bodyTemplate": "{\"modo\":\"{{equipo.modo}}\",\"rele_activo_en_bajo\":\"{{equipo.rele_activo_en_bajo}}\",\"pin_rele\":\"{{equipo.pin_rele}}\",\"pin_flujo\":\"{{equipo.pin_flujo}}\",\"pin_led\":\"{{equipo.pin_led}}\",\"minutos_default\":\"{{equipo.minutos_default}}\",\"minutos_max\":\"{{equipo.minutos_max}}\",\"max_encendida_min\":\"{{equipo.max_encendida_min}}\",\"gracia_seg\":\"{{equipo.gracia_seg}}\",\"seco_seg\":\"{{equipo.seco_seg}}\",\"sin_conexion_seg\":\"{{equipo.sin_conexion_seg}}\",\"pulsos_por_litro\":\"{{equipo.pulsos_por_litro}}\"}",
+      "saveAs": "sincronizado",
+      "next": "bienvenida"
     },
     "sin_acceso": {
       "type": "message",
